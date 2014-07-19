@@ -33,6 +33,8 @@ let g:unite_source_tag_max_name_length =
     \ get(g:, 'unite_source_tag_max_name_length', 25)
 let g:unite_source_tag_max_fname_length =
     \ get(g:, 'unite_source_tag_max_fname_length', 20)
+let g:unite_source_tag_max_candidate_length =
+    \ get(g:, 'unite_source_tag_max_candidate_length', 200)
 
 " When enabled, use multi-byte aware string truncate method
 let g:unite_source_tag_strict_truncate_string =
@@ -52,7 +54,7 @@ let s:input_cache = {}
 let s:source = {
 \   'name': 'tag',
 \   'description': 'candidates from tag file',
-\   'max_candidates': 200,
+\   'max_candidates': g:unite_source_tag_max_candidate_length,
 \   'action_table': {},
 \   'hooks': {},
 \   'syntax': 'uniteSource__Tag',
@@ -283,14 +285,21 @@ function! s:taglist_filter(input)
         return s:input_cache[key]
     endif
 
+    let unite   = unite#get_current_unite()
+    let context = unite.context
+    let format_name = (context.multi_line==1 && g:unite_source_tag_max_name_length!=0)? "%s\n":"%s "
+    let format_file = (context.multi_line==1 && g:unite_source_tag_max_fname_length!=0)? "%s\n":"%s "
+    let format_pat  = "%s"
+    let format = format_name . format_file . format_pat
+
     let taglist = map(taglist(a:input), "{
     \   'word':    v:val.name,
-    \   'abbr':    printf('%s  %s  %s',
+    \   'abbr':    printf(format,
     \                  s:truncate(v:val.name,
-    \                     g:unite_source_tag_max_name_length, 15, '..'),
+    \                     g:unite_source_tag_max_name_length, 15, '..', 0),
     \                  s:truncate('@'.fnamemodify(
     \                     v:val.filename, ':.'),
-    \                     g:unite_source_tag_max_fname_length, 10, '..'),
+    \                     g:unite_source_tag_max_fname_length, 10, '..', 0),
     \                  'pat:' .  matchstr(v:val.cmd,
     \                         '^[?/]\\^\\?\\zs.\\{-1,}\\ze\\$\\?[?/]$')
     \                  ),
@@ -324,16 +333,24 @@ function! s:taglist_filter(input)
     return taglist
 endfunction
 
-function! s:truncate(str, max, footer_width, sep)
+function! s:truncate(str, max, footer_width, sep, is_fill)
+    if a:max==0
+        return ''
+    endif
     if g:unite_source_tag_strict_truncate_string
         return unite#util#truncate_smart(a:str, a:max, a:footer_width, a:sep)
     else
         let l = len(a:str)
         if l <= a:max
-            return a:str . repeat(' ', a:max - l)
+            if a:is_fill == 0
+                return a:str
+            else
+                return a:str . repeat(' ', a:max - l)
+            endif
         else
-            return a:str[0 : (l - a:footer_width-len(a:sep))]
-                        \ .a:sep.a:str[-a:footer_width : -1]
+            if a:max != 0
+                return a:str[0 : (l - a:footer_width-len(a:sep))]
+                            \ .a:sep.a:str[-a:footer_width : -1]
         endif
     endif
 endfunction
@@ -376,12 +393,12 @@ function! s:next(tagdata, line, name)
                 \ unite#util#substitute_path_separator(
                 \   fnamemodify(cont.basedir . '/' . filename, ':p:.'))
 
-    let abbr = s:truncate(name, g:unite_source_tag_max_name_length, 15, '..')
+    let abbr = s:truncate(name, g:unite_source_tag_max_name_length, 15, '..', 1)
     if g:unite_source_tag_show_fname
         let abbr .= '  '.
                     \ s:truncate('@'.fnamemodify(path,
                     \   (a:name ==# 'tag/include' ? ':t' : ':.')),
-                    \   g:unite_source_tag_max_fname_length, 10, '..')
+                    \   g:unite_source_tag_max_fname_length, 10, '..', 1)
     endif
     if g:unite_source_tag_show_location
         if linenr
