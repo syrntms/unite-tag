@@ -35,6 +35,8 @@ let g:unite_source_tag_max_fname_length =
     \ get(g:, 'unite_source_tag_max_fname_length', 20)
 let g:unite_source_tag_max_candidate_length =
     \ get(g:, 'unite_source_tag_max_candidate_length', 200)
+let g:unite_source_tag_filter_mode =
+    \ get(g:, 'unite_source_tag_filter_mode', 'aoi')
 
 " When enabled, use multi-byte aware string truncate method
 let g:unite_source_tag_strict_truncate_string =
@@ -280,6 +282,16 @@ function! s:get_tagdata(tagfile)
 endfunction
 
 function! s:taglist_filter(input)
+    if g:unite_source_tag_filter_mode == ''
+        let taglist = s:taglist_filter_normal(a:input)
+    elseif g:unite_source_tag_filter_mode == 'aoi'
+        let taglist = s:taglist_filter_aoi(a:input)
+    endif
+
+    return taglist
+endfunction
+
+function! s:taglist_filter_normal(input)
     let key = string(tagfiles()).a:input
     if has_key(s:input_cache, key)
         return s:input_cache[key]
@@ -310,10 +322,10 @@ function! s:taglist_filter(input)
     \   'source__cmd': v:val.cmd,
     \}")
 
+
     " Set search pattern.
     for tag in taglist
         let cmd = tag.source__cmd
-
         if cmd =~ '^\d\+$'
             let linenr = cmd - 0
             let tag.action__line = linenr
@@ -328,9 +340,391 @@ function! s:taglist_filter(input)
             let tag.action__pattern = pattern
         endif
     endfor
-
     let s:input_cache[key] = taglist
     return taglist
+endfunction
+
+function! s:taglist_filter_aoi(input)
+    let unite   = unite#get_current_unite()
+    let context = unite.context
+    let format_name = (context.multi_line==1 && g:unite_source_tag_max_name_length!=0)? "%s\n":"%s "
+    let format_file = (context.multi_line==1 && g:unite_source_tag_max_fname_length!=0)? "%s\n":"%s "
+    let format_pat  = "%s"
+    let format = format_name . format_file . format_pat
+
+    let input = s:convert_input(a:input)
+
+    let key = string(tagfiles()).input
+    if has_key(s:input_cache, key)
+        return s:input_cache[key]
+    endif
+
+
+    let taglist = map(taglist(input), "{
+    \   'word':    a:input . '@' . v:val.name,
+    \   'abbr':    printf(format,
+    \                  s:truncate(v:val.name,
+    \                     g:unite_source_tag_max_name_length, 15, '..', 0),
+    \                  s:truncate('@'. v:val.filename,
+    \                     g:unite_source_tag_max_fname_length, 10, '..', 0),
+    \                  'pat:' .  matchstr(v:val.cmd,
+    \                         '^[?/]\\^\\?\\zs.\\{-1,}\\ze\\$\\?[?/]$')
+    \                  ),
+    \   'kind':    'jump_list',
+    \   'action__path':    unite#util#substitute_path_separator(
+    \                   v:val.filename),
+    \   'action__tagname': v:val.name,
+    \   'source__cmd': v:val.cmd,
+    \}")
+
+    " Set aoi search pattern.
+    let taglist_filtered = []
+    let filter_words = s:get_filter_word(a:input)
+
+    for tag in taglist
+        let is_all_filter_pass = 1
+        for word in filter_words
+            let match_filter = match(tag.abbr, word)
+            if match_filter == -1
+                let is_all_filter_pass = 0
+                break
+            endif
+        endfor
+        if is_all_filter_pass != 1
+            continue
+        endif
+
+        let cmd = tag.source__cmd
+        if cmd =~ '^\d\+$'
+            let linenr = cmd - 0
+            let tag.action__line = linenr
+        else
+            " remove / or ? at the head and the end
+            let pattern = matchstr(cmd, '^\([/?]\)\?\zs.*\ze\1$')
+            " unescape /
+            let pattern = substitute(pattern, '\\\/', '/', 'g')
+            " use 'nomagic'
+            let pattern = '\M' . pattern
+
+            let tag.action__pattern = pattern
+        endif
+        let taglist_filtered = insert(taglist_filtered, tag)
+    endfor
+    let s:input_cache[key] = taglist_filtered
+    return taglist_filtered
+endfunction
+
+function! s:get_filter_word(input)
+    let filename = expand("%:p")
+    let pathes = split(filename, '/')
+    let filetype = s:get_filetype(pathes)
+    let tagtype = s:get_tagtype(a:input)
+
+    let filter_words = []
+    if filetype ==# 'action'
+        let filter_words = s:get_filter_word_action(tagtype)
+    endif
+
+    if filetype ==# 'processor'
+        let filter_words = s:get_filter_word_processor(tagtype)
+    endif
+
+    if filetype ==# 'module'
+        let filter_words = s:get_filter_word_module(tagtype)
+    endif
+    return filter_words
+endfunction
+
+function! s:get_filter_word_action(tagtype)
+    let words = []
+    return words
+endfunction
+
+function! s:get_filter_word_processor(tagtype)
+    let words = []
+    let line = getline('.')
+    let pathes = split(line, '->')
+    let class_path = ''
+    let is_legacy = match(line, 'legacy_module')
+    let class_path_index = (is_legacy == -1)? 1:2
+
+    if len(pathes) >= 3
+        let class_part      = pathes[class_path_index]
+        let class_path_list = split(class_part, '_')
+        let class_path_camelized = []
+        for class_path in class_path_list
+            let class_path_camelized = insert(class_path_camelized, s:to_camel(class_path), len(class_path_camelized))
+        endfor
+        let class_name = join(class_path_camelized, '/')
+        if is_legacy == -1
+            let class_path = 'Module/' . class_name . '.php'
+        else
+            let class_path = 'LegacyModule/' . class_name . '.php'
+        endif
+    endif
+
+    if a:tagtype ==# 'method'
+        let words = insert(words, class_path)
+    endif
+
+    if a:tagtype ==# 'class'
+        let words = insert(words, class_path)
+    endif
+
+    return words
+endfunction
+
+function! s:get_filter_word_module(tagtype)
+    let words            = []
+    let line             = getline('.')
+    let is_data          = match(line, 'data')
+    let is_legacy        = match(line, 'legacy_module')
+    let is_module        = match(line, 'module')
+
+    let class_path       = ''
+    let pathes           = split(line, '->')
+
+    if len(pathes) >= 4
+        let class_part      = pathes[2]
+        let class_path_list = split(class_part, '_')
+        let class_path_camelized = []
+        for class_path in class_path_list
+            let class_path_camelized = insert(class_path_camelized, s:to_camel(class_path), len(class_path_camelized))
+        endfor
+        let class_name = join(class_path_camelized, '/')
+        if is_data != -1
+            let class_path = class_name . '.php'
+        elseif is_legacy != -1
+            let class_path = 'LegacyModule/' . class_name . '.php'
+        elseif is_module != -1
+            let class_path = 'Module/' . class_name . '.php'
+        endif
+    endif
+
+    if a:tagtype ==# 'method'
+        if is_data != -1
+            let words = insert(words, 'Cascade/\(DataFormat\|Gateway\)/' . class_path)
+        else
+            let words = insert(words, class_path)
+        endif
+    endif
+
+    if a:tagtype ==# 'class'
+        if is_data != -1
+            let words = insert(words, 'Cascade/\(DataFormat\|Gateway\)/' . class_path)
+        else
+            let words = insert(words, class_path)
+        endif
+    endif
+
+    call g:E(words)
+    return words
+endfunction
+
+function! s:get_tagtype(input)
+    let line = getline('.')
+
+    let match_method = match(line, a:input . "(")
+    if match_method != -1
+        return 'method'
+    endif
+
+    let match_class  = match(line, '->' . a:input . '->')
+    if match_class != -1
+        return 'class'
+    endif
+
+    return 'default'
+endfunction
+
+function! s:get_filetype(pathes)
+    let match_act       = 0
+    let match_app       = 0
+    let match_aoi       = 0
+    let match_frontend  = 0
+    let match_service   = 0
+    let match_processor = 0
+    let match_module    = 0
+
+    for path in a:pathes
+        let act_index       = match(path, '\cact')
+        let app_index       = match(path, '\capp')
+        let aoi_index       = match(path, '\caoi')
+        let frontend_index  = match(path, '\cfrontend')
+        let service_index   = match(path, '\cservice')
+        let processor_index = match(path, '\cprocessor')
+        let module_index    = match(path, '\cmodule')
+        if act_index != -1
+            let match_act = 1
+        endif
+        if app_index != -1
+            let match_app = 1
+        endif
+        if aoi_index != -1
+            let match_aoi = 1
+        endif
+        if frontend_index != -1
+            let match_frontend = 1
+        endif
+        if service_index != -1
+            let match_service = 1
+        endif
+        if processor_index != -1
+            let match_processor = 1
+        endif
+        if module_index != -1
+            let match_module = 1
+        endif
+    endfor
+
+    if match_act == 1 && match_frontend == 1
+        return 'action'
+    endif
+    if match_app == 1 && match_frontend == 1
+        return 'action'
+    endif
+    if match_processor
+        return 'processor'
+    endif
+    if match_aoi == 1
+        return 'processor'
+    endif
+    if match_module == 1
+        return 'module'
+    endif
+    return 'default'
+endfunction
+
+function! s:convert_input(input)
+    let filename = expand("%:p")
+    let pathes = split(filename, '/')
+    let filetype = s:get_filetype(pathes)
+    let tagtype = s:get_tagtype(a:input)
+
+    if filetype ==# 'action'
+        let input = s:convert_input_action(a:input, tagtype)
+        return input
+    endif
+
+    if filetype ==# 'processor'
+        let input = s:convert_input_processor(a:input, tagtype)
+        return input
+    endif
+
+    if filetype ==# 'module'
+        let input = s:convert_input_module(a:input, tagtype)
+        return input
+    endif
+
+    return a:input
+endfunction
+
+function! s:convert_input_action(input, tag_type)
+    let line  = getline('.')
+    let match_aoi = match(line, '->' . 'aoi' . '->')
+
+    if  a:tag_type ==# 'method' && match_aoi != -1
+        let ic = &ignorecase
+        set noignorecase
+
+        let index = -1
+        let index_list = []
+        let input = a:input
+        while 1
+            let index = match(input, "[A-Z]", index + 1)
+            if index == -1
+                break
+            endif
+            let index_list = insert(index_list, index)
+        endwhile
+
+        let index_list = insert(index_list, 0)
+        let index_list = insert(index_list, strlen(input))
+        let index_list = sort(index_list)
+        let path_list = []
+
+        let i = 0
+        while i < len(index_list) - 1
+            let path = strpart(input, index_list[i], index_list[i+1] - index_list[i])
+            let path = s:to_camel(path)
+            let path_list = insert(path_list, path, len(path_list))
+            let i = i+1
+        endwhile
+
+        let path_list = insert(path_list, 'Processor', 0)
+        let input = join(path_list, '_')
+
+        if ic == 1
+            set ignorecase
+        endif
+
+        return input
+    endif
+
+    return a:input
+endfunction
+
+function! s:convert_input_processor(input, tag_type)
+    let input = a:input
+    let line = getline('.')
+    let is_legacy = match(line, 'legacy_module')
+
+    if a:tag_type ==# 'class'
+        let pathes = split(a:input, '_')
+        let path_list = []
+        if is_legacy == -1
+            let path_list = insert(path_list, 'Module', 0)
+        else
+            let path_list = insert(path_list, 'LegacyModule', 0)
+        endif
+        for path in pathes
+            let path_list = insert(path_list, s:to_camel(path), len(path_list))
+        endfor
+        let input = join(path_list, '_')
+    endif
+    return input
+endfunction
+
+function! s:convert_input_module(input, tag_type)
+    let input     = a:input
+    let line      = getline('.')
+    let is_data   = match(line, 'data')
+    let is_legacy = match(line, 'legacy_module')
+    let is_module = match(line, 'module')
+    let pathes    = split(line, '->')
+
+    if len(pathes) >= 4
+        let class_part      = pathes[2]
+        let class_path_list = split(class_part, '_')
+        let class_path_camelized = []
+        for class_path in class_path_list
+            let class_path_camelized = insert(class_path_camelized, s:to_camel(class_path), len(class_path_camelized))
+        endfor
+        let class_name = join(class_path_camelized, '_')
+        if is_data != -1
+            let class_name = class_name
+        elseif is_legacy != -1
+            let class_name = 'LegacyModule_' . class_name
+        elseif is_module != -1
+            let class_name = 'Module_' . class_name
+        endif
+    endif
+
+    if a:tag_type ==# 'method' && is_data != -1
+        let input = class_name
+    endif
+
+    if a:tag_type ==# 'class'
+        let input = class_name
+    endif
+
+    "call g:E(input)
+    return input
+endfunction
+
+function! s:to_camel(str)
+    let camelized = substitute(a:str, '\v<(.)(\w*)', '\u\1\L\2', 'g')
+    return camelized
 endfunction
 
 function! s:truncate(str, max, footer_width, sep, is_fill)
