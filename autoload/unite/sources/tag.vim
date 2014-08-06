@@ -361,7 +361,8 @@ function! s:taglist_filter_aoi(input)
 
     let input = s:convert_input(a:input)
 
-    let key = string(tagfiles()).input
+    let current_file = expand('%:p')
+    let key = string(tagfiles()).current_file.input
     if has_key(s:input_cache, key)
         return s:input_cache[key]
     endif
