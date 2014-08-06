@@ -387,6 +387,7 @@ function! s:taglist_filter_aoi(input)
     let taglist_filtered = []
     let filter_words = s:get_filter_word(a:input)
 
+    call g:E(filter_words)
     for tag in taglist
         let is_all_filter_pass = 1
         for word in filter_words
@@ -417,6 +418,7 @@ function! s:taglist_filter_aoi(input)
         let taglist_filtered = insert(taglist_filtered, tag)
     endfor
     let s:input_cache[key] = taglist_filtered
+
     return taglist_filtered
 endfunction
 
@@ -483,9 +485,9 @@ endfunction
 function! s:get_filter_word_module(tagtype)
     let words            = []
     let line             = getline('.')
-    let is_data          = match(line, 'data')
-    let is_legacy        = match(line, 'legacy_module')
-    let is_module        = match(line, 'module')
+    let is_data          = match(line, '->data->')
+    let is_legacy        = match(line, '->legacy_module->')
+    let is_module        = match(line, '->module->')
 
     let class_path       = ''
     let pathes           = split(line, '->')
@@ -693,9 +695,9 @@ endfunction
 function! s:convert_input_module(input, tag_type)
     let input     = a:input
     let line      = getline('.')
-    let is_data   = match(line, 'data')
-    let is_legacy = match(line, 'legacy_module')
-    let is_module = match(line, 'module')
+    let is_data   = match(line, '->data->')
+    let is_legacy = match(line, '->legacy_module->')
+    let is_module = match(line, '->module->')
     let pathes    = split(line, '->')
 
     if len(pathes) >= 4
