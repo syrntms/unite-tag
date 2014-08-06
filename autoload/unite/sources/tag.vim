@@ -517,7 +517,6 @@ function! s:get_filter_word_module(tagtype)
         endif
     endif
 
-    call g:E(words)
     return words
 endfunction
 
@@ -718,7 +717,6 @@ function! s:convert_input_module(input, tag_type)
         let input = class_name
     endif
 
-    "call g:E(input)
     return input
 endfunction
 
