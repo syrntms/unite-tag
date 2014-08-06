@@ -359,7 +359,7 @@ function! s:taglist_filter_aoi(input)
     let format_pat  = "%s"
     let format = format_name . format_file . format_pat
 
-    let input = s:convert_input(a:input)
+    let input = s:convert_input(a:input) . '$'
 
     let current_file = expand('%:p')
     let key = string(tagfiles()).current_file.input
