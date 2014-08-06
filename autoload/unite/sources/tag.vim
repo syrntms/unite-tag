@@ -387,7 +387,6 @@ function! s:taglist_filter_aoi(input)
     let taglist_filtered = []
     let filter_words = s:get_filter_word(a:input)
 
-    call g:E(filter_words)
     for tag in taglist
         let is_all_filter_pass = 1
         for word in filter_words
