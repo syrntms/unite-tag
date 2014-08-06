@@ -286,9 +286,16 @@ function! s:taglist_filter(input)
         let taglist = s:taglist_filter_normal(a:input)
     elseif g:unite_source_tag_filter_mode == 'aoi'
         let taglist = s:taglist_filter_aoi(a:input)
+        let taglist = s:add_input_taglist(a:input, taglist)
     endif
-
     return taglist
+endfunction
+
+function! s:add_input_taglist(input, taglist)
+    for tag in a:taglist
+        let tag.word = a:input . tag.word
+    endfor
+    return a:taglist
 endfunction
 
 function! s:taglist_filter_normal(input)
@@ -359,9 +366,8 @@ function! s:taglist_filter_aoi(input)
         return s:input_cache[key]
     endif
 
-
     let taglist = map(taglist(input), "{
-    \   'word':    a:input . '@' . v:val.name,
+    \   'word':    v:val.name,
     \   'abbr':    printf(format,
     \                  s:truncate(v:val.name,
     \                     g:unite_source_tag_max_name_length, 15, '..', 0),
