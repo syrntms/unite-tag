@@ -602,6 +602,10 @@ function! s:get_filetype(pathes)
     return 'default'
 endfunction
 
+function! s:sort_method_numeric (i1, i2)
+    return a:i1 - a:i2
+endfunction
+
 function! s:convert_input(input)
     let filename = expand("%:p")
     let pathes = split(filename, '/')
@@ -631,12 +635,14 @@ function! s:convert_input_action(input, tag_type)
     let match_aoi = match(line, '->' . 'aoi' . '->')
 
     if  a:tag_type ==# 'method' && match_aoi != -1
+
         let ic = &ignorecase
         set noignorecase
 
         let index = -1
         let index_list = []
-        let input = a:input
+        "remove snake case
+        let input = substitute(a:input, '_', '', 'g')
         while 1
             let index = match(input, "[A-Z]", index + 1)
             if index == -1
@@ -647,7 +653,7 @@ function! s:convert_input_action(input, tag_type)
 
         let index_list = insert(index_list, 0)
         let index_list = insert(index_list, strlen(input))
-        let index_list = sort(index_list)
+        let index_list = sort(index_list, "s:sort_method_numeric")
         let path_list = []
 
         let i = 0
@@ -841,7 +847,6 @@ function! s:next(tagdata, line, name)
 
     return result
 endfunction
-
 
 " Tag file format
 "   tag_name<TAB>file_name<TAB>ex_cmd
