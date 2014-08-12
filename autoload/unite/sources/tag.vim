@@ -440,12 +440,41 @@ function! s:get_filter_word(input)
     if filetype ==# 'module'
         let filter_words = s:get_filter_word_module(tagtype)
     endif
+
+    let line = getline('.')
+    let count_arrow = s:count_needle(line, '->')
+    if count_arrow == 1
+        "this->method()の形なので自クラス名でtaglistの結果を間引く
+        let path = expand('%:p')
+        let match_from_list = ['act', 'LegacyModule', 'Processor', 'Module']
+        let match_name = ''
+        for match_word in match_from_list
+            let match_name = matchstr(path, match_word . '\zs/.*.', 'g')
+            if len(match_name) > 0
+                break
+            endif
+        endfor
+        let filter_words = insert(filter_words, match_name)
+    endif
+
     return filter_words
 endfunction
 
 function! s:get_filter_word_action(tagtype)
     let words = []
     return words
+endfunction
+
+function! s:count_needle(string, needle)
+    let max = strlen(a:string)
+    let counter = 0
+    let index = 0
+    let index = match(a:string, a:needle, index)
+    while index != -1
+        let counter = counter + 1
+        let index = match(a:string, a:needle, index + 1)
+    endwhile
+    return counter
 endfunction
 
 function! s:get_filter_word_processor(tagtype)
